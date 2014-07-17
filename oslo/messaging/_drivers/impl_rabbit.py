@@ -227,9 +227,9 @@ class DirectConsumer(ConsumerBase):
         Other kombu options may be passed
         """
         # Default options
-        options = {'durable': False,
+        options = {'durable': conf.amqp_durable_queues,
                    'queue_arguments': _get_queue_arguments(conf),
-                   'auto_delete': True,
+                   'auto_delete': conf.amqp_auto_delete,
                    'exclusive': False}
         options.update(kwargs)
         exchange = kombu.entity.Exchange(name=msg_id,
@@ -300,9 +300,9 @@ class FanoutConsumer(ConsumerBase):
         queue_name = '%s_fanout_%s' % (topic, unique)
 
         # Default options
-        options = {'durable': False,
+        options = {'durable': conf.amqp_durable_queues,
                    'queue_arguments': _get_queue_arguments(conf),
-                   'auto_delete': True,
+                   'auto_delete': conf.amqp_auto_delete,
                    'exclusive': False}
         options.update(kwargs)
         exchange = kombu.entity.Exchange(name=exchange_name, type='fanout',
