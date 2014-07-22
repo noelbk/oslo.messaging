@@ -363,6 +363,22 @@ class DirectPublisher(Publisher):
                    'auto_delete': True,
                    'exclusive': False}
         options.update(kwargs)
+
+        # NOTE(noelbk)
+        #
+        # fixes
+        # https://bugs.launchpad.net/oslo.messaging/+bug/1338732
+        #
+        # If rabbit dies, the consumer can be disconnected before the
+        # publisher sends, and if the consumer hasn't delared the
+        # queue, the publisher's will send a message to an exchange
+        # that's not bound to a queue, and the message wll be lost.
+        # Setting passive=True will cause the publisher to fail and
+        # retry if the consumer hasn't declared the receiving queue
+        # yet.
+        #
+        options['passive'] = True
+
         super(DirectPublisher, self).__init__(channel, topic, topic,
                                               type='direct', **options)
 
