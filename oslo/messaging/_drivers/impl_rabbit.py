@@ -95,6 +95,11 @@ rabbit_opts = [
                default=0,
                help='Maximum number of RabbitMQ connection retries. '
                     'Default is 0 (infinite retry count).'),
+    cfg.FloatOpt('rabbit_publish_timeout',
+                 default=300.0,
+                 help='Maximum time to retry publishing a reply to a queue '
+                      'in seconds. 0 is no timeout. '
+                      'Default is 5 minutes.'),
     cfg.BoolOpt('rabbit_ha_queues',
                 default=False,
                 help='Use HA queues in RabbitMQ (x-ha-policy: all). '
@@ -650,10 +655,13 @@ class Connection(object):
                                 '%(sleep_time)d seconds.'), log_info)
                 time.sleep(sleep_time)
 
-    def ensure(self, error_callback, method, retry=None):
+    def ensure(self, error_callback, method, retry=None, timeout=None):
+        time_start = time.time()
         while True:
             try:
                 return method()
+            except rpc_common.Timeout:
+                raise
             except self.connection_errors as e:
                 if error_callback:
                     error_callback(e)
@@ -674,6 +682,9 @@ class Connection(object):
                     raise
                 if error_callback:
                     error_callback(e)
+
+            if timeout and timeout > 0 and time.time() - time_start > timeout:
+                raise rpc_common.Timeout()
             self.reconnect(retry=retry)
 
     def get_channel(self):
@@ -753,7 +764,10 @@ class Connection(object):
             publisher = cls(self.conf, self.channel, topic=topic, **kwargs)
             publisher.send(msg, timeout)
 
-        self.ensure(_error_callback, _publish, retry=retry)
+        if timeout is None:
+            timeout = self.conf.rabbit_publish_timeout
+
+        self.ensure(_error_callback, _publish, retry=retry, timeout=timeout)
 
     def declare_direct_consumer(self, topic, callback):
         """Create a 'direct' queue.

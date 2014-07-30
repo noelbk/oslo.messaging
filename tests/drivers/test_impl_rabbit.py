@@ -265,6 +265,61 @@ class TestSendReceive(test_utils.BaseTestCase):
 TestSendReceive.generate_scenarios()
 
 
+class TestReplyTimeout(test_utils.BaseTestCase):
+    def setUp(self):
+        super(TestReplyTimeout, self).setUp()
+        self.messaging_conf.transport_driver = 'rabbit'
+        self.messaging_conf.in_memory = True
+
+    def test_reply_timeout(self):
+        transport = messaging.get_transport(self.conf)
+        self.addCleanup(transport.cleanup)
+        driver = transport._driver
+        target = messaging.Target(topic='testtopic')
+        listener = driver.listen(target)
+
+        def send_and_wait_for_reply():
+            try:
+                reply = driver.send(target,
+                                    dict(ctxt=1),
+                                    dict(send=1),
+                                    wait_for_reply=True,
+                                    timeout=0.1)
+                # should be killed before receiving a reply
+                self.assertFalse(reply),
+            except driver_common.Timeout:
+                # ok, I expect a Timeout on send
+                return
+
+        # start the sender
+        sender = threading.Thread(target=send_and_wait_for_reply)
+        sender.start()
+
+        # receive the message
+        msg = listener.poll()
+        self.assertIsNotNone(msg)
+
+        # wait for sender to timeout and die
+        sender.join(0.5)
+
+        # hack Publisher.send to always fail so msg.reply times out
+        def send_ioerror(self, msg, timeout=None):
+            raise IOError()
+
+        import oslo.messaging._drivers.impl_rabbit as impl_rabbit
+        old_send = impl_rabbit.Publisher.send
+        impl_rabbit.Publisher.send = send_ioerror
+        try:
+            driver.conf.rabbit_publish_timeout = 0.1
+            self.assertRaises(driver_common.Timeout, msg.reply, dict(reply=1))
+        finally:
+            # restore publisher.send
+            impl_rabbit.Publisher.send = old_send
+
+
+TestSendReceive.generate_scenarios()
+
+
 class TestPollAsync(test_utils.BaseTestCase):
 
     def setUp(self):
